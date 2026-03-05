@@ -1,32 +1,40 @@
+//
+//  ClienteHTTP.swift
+//  RedProfesional
+//
+
 import Foundation
 
+/// Cliente HTTP principal. Configura una vez y reutiliza en toda la app.
+///
+/// Ejemplo básico:
+/// ```swift
+/// var cliente = ClienteHTTP(baseURL: URL(string: "https://api.ejemplo.com")!)
+/// cliente.token = "mi-token"
+/// let usuario: Usuario = try await cliente.request(endpoint: .perfil, tipo: Usuario.self)
+/// ```
 public struct ClienteHTTP: Sendable {
 
+    /// URL base a la que se concatenan las rutas de cada endpoint.
     public let baseURL: URL
 
-    /// Token opcional (por ejemplo después de login)
-    public var token: String? = nil
+    /// Token de autorización. Si está presente se agrega como `Bearer` en cada petición.
+    public var token: String?
 
-    /// Timeout por default si el endpoint no especifica uno.
+    /// Tiempo máximo de espera cuando el endpoint no define uno propio. Por defecto: 15 s.
     public var timeoutPorDefecto: TimeInterval = 15
 
-    /// Política de reintentos (para estabilidad).
+    /// Política de reintentos ante fallos de red transitorios.
     public var politicaReintentos: PoliticaReintentos = .init()
 
-    /// Logger opcional (puedes poner LoggerNulo en producción).
+    /// Logger de eventos. Usa `LoggerNulo()` en producción para silenciar los logs.
     public var logger: LoggerRed? = LoggerConsola()
 
-    /// Encoder/Decoder configurables (PRO).
-    /// Ej: jsonDecoder.keyDecodingStrategy = .convertFromSnakeCase
-    public var jsonDecoder: JSONDecoder = {
-        let d = JSONDecoder()
-        return d
-    }()
+    /// Decoder JSON configurable. Útil para ajustar estrategias de claves o fechas.
+    public var jsonDecoder: JSONDecoder = JSONDecoder()
 
-    public var jsonEncoder: JSONEncoder = {
-        let e = JSONEncoder()
-        return e
-    }()
+    /// Encoder JSON configurable.
+    public var jsonEncoder: JSONEncoder = JSONEncoder()
 
     private let session: URLSession
 
@@ -57,13 +65,12 @@ public struct ClienteHTTP: Sendable {
                 let (data, response) = try await session.data(for: req)
                 let http = try validarHTTP(response: response, data: data)
 
-                // 204 / body vacío
+                // 204 o body vacío: solo se permite si el tipo esperado es RespuestaVacia
                 if http.statusCode == 204 || data.isEmpty {
-                    if T.self == RespuestaVacia.self {
-                        return RespuestaVacia() as! T
-                    } else {
+                    guard let vacia = RespuestaVacia() as? T else {
                         throw ErrorRed.decoding(detalle: "Respuesta vacía, pero se esperaba JSON para \(T.self)")
                     }
+                    return vacia
                 }
 
                 let decodificado = try decodificar(T.self, data: data)
@@ -142,11 +149,10 @@ public struct ClienteHTTP: Sendable {
             req.setValue(v, forHTTPHeaderField: k)
         }
 
-        // Body JSON (si se manda)
+        // Body JSON
         if let body {
             req.setValue("application/json; charset=utf-8", forHTTPHeaderField: "Content-Type")
             do {
-                // ✅ usa el encoder configurable
                 req.httpBody = try jsonEncoder.encode(AnyEncodable(body))
             } catch {
                 throw ErrorRed.encoding(detalle: error.localizedDescription)
@@ -173,7 +179,6 @@ public struct ClienteHTTP: Sendable {
     // MARK: - Decoding
     private func decodificar<T: Decodable>(_ tipo: T.Type, data: Data) throws -> T {
         do {
-            // ✅ usa el decoder configurable
             return try jsonDecoder.decode(T.self, from: data)
         } catch {
             throw ErrorRed.decoding(detalle: error.localizedDescription)
