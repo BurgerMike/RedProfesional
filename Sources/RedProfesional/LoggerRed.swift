@@ -12,28 +12,38 @@ public protocol LoggerRed: Sendable {
 }
 
 public struct EventoLogRed: Sendable {
-    public enum Nivel: Sendable {
-        case debug
-        case info
-        case warning
-        case error
+    public enum Nivel: String, Sendable {
+        case debug   = "DEBUG  "
+        case info    = "INFO   "
+        case warning = "WARNING"
+        case error   = "ERROR  "
     }
 
     public var nivel: Nivel
     public var mensaje: String
+    /// Momento exacto en que se generó el evento.
+    public var fecha: Date
 
-    public init(nivel: Nivel, mensaje: String) {
+    public init(nivel: Nivel, mensaje: String, fecha: Date = .now) {
         self.nivel = nivel
         self.mensaje = mensaje
+        self.fecha = fecha
     }
 }
 
-/// Logger simple por defecto (print). Ideal para aprender.
+/// Logger simple por defecto (print). Ideal para desarrollo y depuración.
 public struct LoggerConsola: LoggerRed {
+    private static let formato: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm:ss.SSS"
+        return f
+    }()
+
     public init() {}
 
     public func log(_ evento: EventoLogRed) {
-        print("[RED][\(evento.nivel)] \(evento.mensaje)")
+        let hora = Self.formato.string(from: evento.fecha)
+        print("[RED] \(hora) [\(evento.nivel.rawValue)] \(evento.mensaje)")
     }
 }
 

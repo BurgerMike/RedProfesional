@@ -77,7 +77,11 @@ public struct ClienteHTTP: Sendable {
 
                 logger?.log(.init(
                     nivel: .info,
-                    mensaje: "✅ \(req.httpMethod ?? "") \(http.url?.absoluteString ?? "") [\(http.statusCode)] rid=\(requestId)"
+                    mensaje: "✅ \(req.httpMethod ?? "") \(http.url?.absoluteString ?? "") [\(http.statusCode)] rid=\(requestId) bytes=\(data.count)"
+                ))
+                logger?.log(.init(
+                    nivel: .debug,
+                    mensaje: "JSON ⬇️\n\(data.jsonPretty ?? data.utf8String ?? "<binario>")"
                 ))
 
                 return decodificado
@@ -109,6 +113,61 @@ public struct ClienteHTTP: Sendable {
         requestId: String = UUID().uuidString
     ) async throws {
         _ = try await request(endpoint: endpoint, tipo: RespuestaVacia.self, body: body, requestId: requestId)
+    }
+
+    // MARK: - API datos crudos (sin decodificar)
+
+    /// Ejecuta la petición y devuelve el `Data` crudo del servidor.
+    ///
+    /// Útil cuando:
+    /// - No conoces aún la estructura del JSON que regresa la API.
+    /// - Quieres guardar o reenviar el cuerpo sin transformarlo.
+    /// - Estás depurando un error de decoding.
+    ///
+    /// Ejemplo:
+    /// ```swift
+    /// let data = try await cliente.requestRaw(endpoint: .perfil)
+    /// print(data.jsonString ?? "no es JSON válido")
+    /// ```
+    public func requestRaw(
+        endpoint: Endpoint,
+        body: (any Encodable)? = nil,
+        requestId: String = UUID().uuidString
+    ) async throws -> Data {
+        let req = try construirRequest(endpoint: endpoint, body: body, requestId: requestId)
+
+        logger?.log(.init(
+            nivel: .debug,
+            mensaje: "➡️ RAW \(req.httpMethod ?? "") \(req.url?.absoluteString ?? "") rid=\(requestId)"
+        ))
+
+        let (data, response) = try await session.data(for: req)
+        let http = try validarHTTP(response: response, data: data)
+
+        logger?.log(.init(
+            nivel: .info,
+            mensaje: "✅ RAW [\(http.statusCode)] rid=\(requestId) bytes=\(data.count)\n\(data.jsonPretty ?? data.utf8String ?? "<binario>")"
+        ))
+
+        return data
+    }
+
+    /// Ejecuta la petición y devuelve el cuerpo como `String` JSON legible (pretty-printed).
+    ///
+    /// Ideal para explorar o imprimir la respuesta de un endpoint desconocido.
+    ///
+    /// Ejemplo:
+    /// ```swift
+    /// let json = try await cliente.requestJSON(endpoint: .catalogo)
+    /// print(json)
+    /// ```
+    public func requestJSON(
+        endpoint: Endpoint,
+        body: (any Encodable)? = nil,
+        requestId: String = UUID().uuidString
+    ) async throws -> String {
+        let data = try await requestRaw(endpoint: endpoint, body: body, requestId: requestId)
+        return data.jsonPretty ?? data.utf8String ?? "<respuesta no legible>"
     }
 
     // MARK: - Construcción de URLRequest
@@ -197,5 +256,26 @@ public struct ClienteHTTP: Sendable {
         let value: any Encodable
         init(_ value: any Encodable) { self.value = value }
         func encode(to encoder: Encoder) throws { try value.encode(to: encoder) }
+    }
+}
+
+// MARK: - Extensiones de Data para inspección de respuestas
+
+public extension Data {
+
+    /// Intenta parsear el `Data` como JSON y lo devuelve en formato legible (pretty-printed).
+    /// Devuelve `nil` si el contenido no es JSON válido.
+    var jsonPretty: String? {
+        guard let obj = try? JSONSerialization.jsonObject(with: self),
+              let pretty = try? JSONSerialization.data(withJSONObject: obj, options: [.prettyPrinted, .sortedKeys]),
+              let str = String(data: pretty, encoding: .utf8)
+        else { return nil }
+        return str
+    }
+
+    /// Intenta decodificar el `Data` como texto UTF-8.
+    /// Devuelve `nil` si no es texto legible.
+    var utf8String: String? {
+        String(data: self, encoding: .utf8)
     }
 }
