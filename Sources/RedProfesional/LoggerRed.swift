@@ -12,11 +12,25 @@ public protocol LoggerRed: Sendable {
 }
 
 public struct EventoLogRed: Sendable {
-    public enum Nivel: String, Sendable {
+    /// Nivel de severidad del evento. El orden de comparación es: debug < info < warning < error.
+    public enum Nivel: String, Sendable, Comparable {
         case debug   = "DEBUG  "
         case info    = "INFO   "
         case warning = "WARNING"
         case error   = "ERROR  "
+
+        private var orden: Int {
+            switch self {
+            case .debug:   return 0
+            case .info:    return 1
+            case .warning: return 2
+            case .error:   return 3
+            }
+        }
+
+        public static func < (lhs: Nivel, rhs: Nivel) -> Bool {
+            lhs.orden < rhs.orden
+        }
     }
 
     public var nivel: Nivel
@@ -31,17 +45,26 @@ public struct EventoLogRed: Sendable {
     }
 }
 
-/// Logger simple por defecto (print). Ideal para desarrollo y depuración.
+/// Logger de consola. Imprime solo los eventos cuyo nivel es igual o superior a `nivelMinimo`.
+///
+/// - `nivelMinimo: .debug` → imprime todo (ideal en desarrollo).
+/// - `nivelMinimo: .error` → imprime solo errores (ideal en producción).
 public struct LoggerConsola: LoggerRed {
+    /// Nivel mínimo para que el evento se imprima. Por defecto `.debug` (todo).
+    public var nivelMinimo: EventoLogRed.Nivel
+
     private static let formato: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "HH:mm:ss.SSS"
         return f
     }()
 
-    public init() {}
+    public init(nivelMinimo: EventoLogRed.Nivel = .debug) {
+        self.nivelMinimo = nivelMinimo
+    }
 
     public func log(_ evento: EventoLogRed) {
+        guard evento.nivel >= nivelMinimo else { return }
         let hora = Self.formato.string(from: evento.fecha)
         print("[RED] \(hora) [\(evento.nivel.rawValue)] \(evento.mensaje)")
     }

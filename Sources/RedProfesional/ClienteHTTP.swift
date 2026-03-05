@@ -117,46 +117,65 @@ public struct ClienteHTTP: Sendable {
 
     // MARK: - API datos crudos (sin decodificar)
 
+    /// Ejecuta la petición y devuelve una `RespuestaCruda` con el body, status, headers y fecha.
+    ///
+    /// Es la opción más completa para inspeccionar o almacenar lo que devuelve el servidor.
+    /// Úsala como puente hacia SwiftData u otro almacenamiento fuera del paquete.
+    ///
+    /// ```swift
+    /// let respuesta = try await cliente.requestCrudo(endpoint: .catalogo)
+    /// print(respuesta.statusCode)          // 200
+    /// print(respuesta.jsonPretty ?? "")    // JSON formateado
+    /// print(respuesta.headers)             // todas las cabeceras
+    ///
+    /// // Guardar en SwiftData (fuera del paquete):
+    /// miModelo.jsonGuardado  = respuesta.data
+    /// miModelo.fechaCaptura  = respuesta.fecha
+    /// ```
+    public func requestCrudo(
+        endpoint: Endpoint,
+        body: (any Encodable)? = nil,
+        requestId: String = UUID().uuidString
+    ) async throws -> RespuestaCruda {
+        let req = try construirRequest(endpoint: endpoint, body: body, requestId: requestId)
+
+        logger?.log(.init(
+            nivel: .debug,
+            mensaje: "➡️ \(req.httpMethod ?? "") \(req.url?.absoluteString ?? "") rid=\(requestId)"
+        ))
+
+        let (data, response) = try await session.data(for: req)
+        let http = try validarHTTP(response: response, data: data)
+        let crudo = RespuestaCruda(data: data, http: http)
+
+        logger?.log(.init(
+            nivel: .info,
+            mensaje: "✅ [\(crudo.statusCode)] rid=\(requestId) bytes=\(crudo.bytes)"
+        ))
+        logger?.log(.init(
+            nivel: .debug,
+            mensaje: "JSON ⬇️\n\(crudo.jsonPretty ?? crudo.utf8String ?? "<binario>")"
+        ))
+
+        return crudo
+    }
+
     /// Ejecuta la petición y devuelve el `Data` crudo del servidor.
     ///
-    /// Útil cuando:
-    /// - No conoces aún la estructura del JSON que regresa la API.
-    /// - Quieres guardar o reenviar el cuerpo sin transformarlo.
-    /// - Estás depurando un error de decoding.
-    ///
-    /// Ejemplo:
-    /// ```swift
-    /// let data = try await cliente.requestRaw(endpoint: .perfil)
-    /// print(data.jsonString ?? "no es JSON válido")
-    /// ```
+    /// Útil para reenviar bytes sin transformarlos. Para inspección completa
+    /// (status, headers, fecha) usa `requestCrudo()`.
     public func requestRaw(
         endpoint: Endpoint,
         body: (any Encodable)? = nil,
         requestId: String = UUID().uuidString
     ) async throws -> Data {
-        let req = try construirRequest(endpoint: endpoint, body: body, requestId: requestId)
-
-        logger?.log(.init(
-            nivel: .debug,
-            mensaje: "➡️ RAW \(req.httpMethod ?? "") \(req.url?.absoluteString ?? "") rid=\(requestId)"
-        ))
-
-        let (data, response) = try await session.data(for: req)
-        let http = try validarHTTP(response: response, data: data)
-
-        logger?.log(.init(
-            nivel: .info,
-            mensaje: "✅ RAW [\(http.statusCode)] rid=\(requestId) bytes=\(data.count)\n\(data.jsonPretty ?? data.utf8String ?? "<binario>")"
-        ))
-
-        return data
+        try await requestCrudo(endpoint: endpoint, body: body, requestId: requestId).data
     }
 
-    /// Ejecuta la petición y devuelve el cuerpo como `String` JSON legible (pretty-printed).
+    /// Ejecuta la petición y devuelve el JSON como `String` legible (pretty-printed).
     ///
-    /// Ideal para explorar o imprimir la respuesta de un endpoint desconocido.
+    /// Ideal para imprimir o explorar un endpoint desconocido rápidamente.
     ///
-    /// Ejemplo:
     /// ```swift
     /// let json = try await cliente.requestJSON(endpoint: .catalogo)
     /// print(json)
@@ -166,8 +185,8 @@ public struct ClienteHTTP: Sendable {
         body: (any Encodable)? = nil,
         requestId: String = UUID().uuidString
     ) async throws -> String {
-        let data = try await requestRaw(endpoint: endpoint, body: body, requestId: requestId)
-        return data.jsonPretty ?? data.utf8String ?? "<respuesta no legible>"
+        let crudo = try await requestCrudo(endpoint: endpoint, body: body, requestId: requestId)
+        return crudo.jsonPretty ?? crudo.utf8String ?? "<respuesta no legible>"
     }
 
     // MARK: - Construcción de URLRequest
