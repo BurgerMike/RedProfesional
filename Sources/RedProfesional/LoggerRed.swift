@@ -2,18 +2,30 @@
 //  LoggerRed.swift
 //  RedProfesional
 //
-//  Created by ChumBucketComputer on 03/03/26.
-//
 
 import Foundation
+import OSLog
 
+/// Protocolo de logging para eventos de red.
+///
+/// Implementa este protocolo para integrar tu propio sistema de métricas o logging:
+/// ```swift
+/// struct MiLogger: LoggerRed {
+///     func log(_ evento: EventoLogRed) {
+///         MiSistemaAnalytics.track(evento.mensaje, nivel: evento.nivel.rawValue)
+///     }
+/// }
+/// cliente.logger = MiLogger()
+/// ```
 public protocol LoggerRed: Sendable {
     func log(_ evento: EventoLogRed)
 }
 
+/// Evento de log generado por el cliente HTTP.
 public struct EventoLogRed: Sendable {
-    /// Nivel de severidad del evento. El orden de comparación es: debug < info < warning < error.
-    public enum Nivel: String, Sendable, Comparable {
+
+    /// Nivel de severidad. Orden ascendente: `debug < info < warning < error`.
+    public enum Nivel: String, Sendable, Comparable, CaseIterable {
         case debug   = "DEBUG  "
         case info    = "INFO   "
         case warning = "WARNING"
@@ -45,36 +57,79 @@ public struct EventoLogRed: Sendable {
     }
 }
 
-/// Logger de consola. Imprime solo los eventos cuyo nivel es igual o superior a `nivelMinimo`.
+// MARK: - LoggerConsola
+
+/// Logger que escribe en el sistema de logging unificado de Apple (`os.Logger`).
 ///
-/// - `nivelMinimo: .debug` → imprime todo (ideal en desarrollo).
-/// - `nivelMinimo: .error` → imprime solo errores (ideal en producción).
+/// Los eventos aparecen en **Console.app** e **Instruments**, con soporte para
+/// filtros por subsistema y categoría. Solo imprime eventos iguales o superiores
+/// a `nivelMinimo`.
+///
+/// - `nivelMinimo: .debug` → todo (desarrollo).
+/// - `nivelMinimo: .error` → solo errores (producción).
+///
+/// ```swift
+/// // Desarrollo
+/// cliente.logger = LoggerConsola(nivelMinimo: .debug)
+///
+/// // Producción
+/// cliente.logger = LoggerConsola(nivelMinimo: .error)
+///
+/// // Subsistema y categoría personalizados
+/// cliente.logger = LoggerConsola(subsistema: "com.miapp", categoria: "API")
+/// ```
 public struct LoggerConsola: LoggerRed {
-    /// Nivel mínimo para que el evento se imprima. Por defecto `.debug` (todo).
+
     public var nivelMinimo: EventoLogRed.Nivel
+    private let osLogger: Logger
 
-    private static let formato: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "HH:mm:ss.SSS"
-        return f
-    }()
-
-    public init(nivelMinimo: EventoLogRed.Nivel = .debug) {
+    public init(
+        nivelMinimo: EventoLogRed.Nivel = .debug,
+        subsistema: String = Bundle.main.bundleIdentifier ?? "RedProfesional",
+        categoria: String = "RedProfesional"
+    ) {
         self.nivelMinimo = nivelMinimo
+        self.osLogger = Logger(subsystem: subsistema, category: categoria)
     }
 
     public func log(_ evento: EventoLogRed) {
         guard evento.nivel >= nivelMinimo else { return }
-        let hora = Self.formato.string(from: evento.fecha)
-        print("[RED] \(hora) [\(evento.nivel.rawValue)] \(evento.mensaje)")
+        switch evento.nivel {
+        case .debug:   osLogger.debug("\(evento.mensaje, privacy: .public)")
+        case .info:    osLogger.info("\(evento.mensaje, privacy: .public)")
+        case .warning: osLogger.warning("\(evento.mensaje, privacy: .public)")
+        case .error:   osLogger.error("\(evento.mensaje, privacy: .public)")
+        }
     }
 }
 
-/// Logger nulo (no imprime nada). Útil para producción si no quieres logs.
+// MARK: - LoggerNulo
+
+/// Logger nulo (no emite nada). Ideal para producción cuando no se necesita logging.
 public struct LoggerNulo: LoggerRed {
     public init() {}
+    public func log(_ evento: EventoLogRed) {}
+}
+
+// MARK: - LoggerMultiplex
+
+/// Logger que reenvía cada evento a múltiples loggers simultáneamente.
+///
+/// ```swift
+/// cliente.logger = LoggerMultiplex([
+///     LoggerConsola(nivelMinimo: .debug),
+///     MiLoggerRemoto()
+/// ])
+/// ```
+public struct LoggerMultiplex: LoggerRed {
+    private let loggers: [any LoggerRed]
+
+    public init(_ loggers: [any LoggerRed]) {
+        self.loggers = loggers
+    }
 
     public func log(_ evento: EventoLogRed) {
-        // no-op
+        loggers.forEach { $0.log(evento) }
     }
 }
+

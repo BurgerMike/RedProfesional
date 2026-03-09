@@ -2,7 +2,7 @@
 //  ErrorRed.swift
 //  RedProfesional
 //
-//  Created by ChumBucketComputer on 03/03/26.
+
 //
 
 import Foundation

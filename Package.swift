@@ -7,12 +7,27 @@ let package = Package(
     name: "RedProfesional",
     platforms: [
         .iOS(.v17),
-        .macOS(.v14)
+        .macOS(.v14),
+        .tvOS(.v17),
+        .watchOS(.v10),
+        .visionOS(.v1)
     ],
     products: [
-        .library(name: "RedProfesional", targets: ["RedProfesional"])
+        .library(
+            name: "RedProfesional",
+            targets: ["RedProfesional"]
+        )
     ],
     targets: [
-        .target(name: "RedProfesional")
+        .target(
+            name: "RedProfesional",
+            swiftSettings: [
+                .enableExperimentalFeature("StrictConcurrency")
+            ]
+        ),
+        .testTarget(
+            name: "RedProfesionalTests",
+            dependencies: ["RedProfesional"]
+        )
     ]
 )

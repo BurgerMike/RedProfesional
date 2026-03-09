@@ -49,7 +49,25 @@ public struct RespuestaCruda: Sendable {
     /// Tamaño del cuerpo en bytes.
     public var bytes: Int { data.count }
 
-    // MARK: - Init interno
+    /// `true` si el status code está en el rango 2xx.
+    public var esExitoso: Bool { (200...299).contains(statusCode) }
+
+    // MARK: - Acceso a cabeceras
+
+    /// Devuelve el valor de la cabecera indicada (búsqueda insensible a mayúsculas).
+    ///
+    /// ```swift
+    /// let total = respuesta.header("X-Total-Count")
+    /// let etag  = respuesta.header("ETag")
+    /// ```
+    public func header(_ nombre: String) -> String? {
+        let lower = nombre.lowercased()
+        return headers.first { $0.key.lowercased() == lower }?.value
+    }
+
+    // MARK: - Inits
+
+    /// Init interno para uso del cliente HTTP.
     init(data: Data, http: HTTPURLResponse) {
         self.data = data
         self.statusCode = http.statusCode
@@ -62,5 +80,21 @@ public struct RespuestaCruda: Sendable {
             }
         }
         self.headers = hdrs
+    }
+
+    /// Init público para facilitar tests unitarios.
+    ///
+    /// ```swift
+    /// let mock = RespuestaCruda(
+    ///     data: jsonData,
+    ///     statusCode: 200,
+    ///     headers: ["Content-Type": "application/json"]
+    /// )
+    /// ```
+    public init(data: Data, statusCode: Int, headers: [String: String] = [:], fecha: Date = .now) {
+        self.data = data
+        self.statusCode = statusCode
+        self.headers = headers
+        self.fecha = fecha
     }
 }
