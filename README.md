@@ -626,6 +626,67 @@ struct ProductosViewModel {
 
 ---
 
+## Datos de prueba sin servidor
+
+Durante el desarrollo es habitual querer datos reales en pantalla sin backend disponible. La técnica es cargar un JSON local del bundle — sin red, sin `ClienteHTTP`.
+
+```
+JSON en bundle → Data(contentsOf:) → JSONDecoder → modelos Codable → View
+```
+
+### 1. Agrega el JSON al bundle
+
+Arrastra el `.json` a tu target en Xcode y verifica **Build Phases → Copy Bundle Resources**.
+
+### 2. Función de carga
+
+```swift
+func cargarJSON<T: Decodable>(_ nombre: String, tipo: T.Type) throws -> T {
+    guard let url = Bundle.main.url(forResource: nombre, withExtension: "json") else {
+        fatalError("\(nombre).json no está en el bundle")
+    }
+    return try JSONDecoder().decode(T.self, from: try Data(contentsOf: url))
+}
+```
+
+### 3. ViewModel y Previews
+
+```swift
+@Observable final class EmpresasViewModel {
+    var empresas: [Empresa] = []
+    func cargar() {
+        empresas = (try? cargarJSON("empresas", tipo: [Empresa].self)) ?? []
+    }
+}
+
+#Preview {
+    let vm = EmpresasViewModel()
+    vm.cargar()
+    return EmpresasListView(vm: vm)
+}
+```
+
+### 4. Migración a producción — solo cambian dos líneas
+
+```swift
+// ANTES — bundle, síncrono
+func cargar() {
+    empresas = (try? cargarJSON("empresas", tipo: [Empresa].self)) ?? []
+}
+
+// DESPUÉS — RedProfesional, async
+func cargar() async {
+    empresas = (try? await ServicioAPI.shared.cliente.request(
+        endpoint: Endpoint(path: "empresas"),
+        tipo: [Empresa].self
+    )) ?? []
+}
+```
+
+> Los modelos `Codable`, el ViewModel y toda la UI quedan intactos al migrar.
+
+---
+
 ## Arquitectura del package
 
 ```mermaid
@@ -698,3 +759,4 @@ Sí, ya que todo está construido sobre `Foundation` y `os.Logger`, que funciona
 
 MIT — ver [LICENSE](LICENSE) para más detalles.
 
+****
